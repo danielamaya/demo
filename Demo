@@ -17,19 +17,28 @@ post '/' => sub {
 
   # Match the dom against a regex for phone numbers
   # Regex pulled from NANP spec
+
   if ( $dom->all_text =~ /((?:(?:\+?1\s*(?:[.-]\s*)?)?(?:\(\s*([2-9]1[02-9]|[2-9][02-8]1|[2-9][02-8][02-9])\s*\)|([2-9]1[02-9]|[2-9][02-8]1|[2-9][02-8][02-9]))\s*(?:[.-]\s*)?)?([2-9]1[02-9]|[2-9][02-9]1|[2-9][02-9]{2})\s*(?:[.-]\s*)?([0-9]{4})(?:\s*(?:#|x\.?|ext\.?|extension)\s*(\d+))?)/g ) {
     $links->{contact}->{phone} = $1;
+  }
+  if ( $dom->all_text =~ /([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)/g ) {
+    push @{$links->{phone}}, $1;
   }
 
   # Loop through links on the page grabbing email and any links matching
   # certain domains
+  my %seen;
   for my $el ($dom->find('a[href]')->each) {
     my $url = Mojo::URL->new($el->attr->{href});
     if ( $el->attr->{href} =~ /mailto/i ) {
-      $links->{contact}->{email} = (split(/:/,$el->attr->{href}))[1];
+      push @{$links->{email}}, (split(/:/,$el->attr->{href}))[1];
     }
     if ( $url->host and $url->host =~ /(facebook|github|twitter|linkedin|stackoverflow)/i ) {
-      push @{$links->{links}->{$1}}, { href => $url->to_string, text => $el->text };
+      my $link = lc $url->to_string;
+      if ( !$seen{$link} ) {
+        push @{$links->{$1}}, $link;
+        $seen{$link} = 1;
+      }
     }
   }
 
@@ -62,19 +71,21 @@ __DATA__
       $( "#search" ).submit(function( event ) {
         event.preventDefault();
         $.post( '/', $(this).serialize(), function(data) {
+          $('#results').empty();
           if (jQuery.isEmptyObject(data)) {
-            $( "body" ).append('<br /><br /><b>No Results!</b>');
+            $( "#results" ).append('<li><b>No Results!</li>');
           }
           else {
-            $('#results').empty();
-            $.each(data.links, function(key, val){
+            $.each(data, function(key, val){
                 $('#results').append('<li><b>'+key+':</b> </li>');
                 $.each(val, function(key, val){
-                  $('#results').append('<a href='+val.href+'>'+val.text+'</a><br /> ');
+                  if ( key === 'phone' ) {
+                    $('#results').append(val+'<br /> ');
+                  }
+                  else {
+                    $('#results').append('<a href='+val+'>'+val+'</a><br /> ');
+                  }
                 });
-            });
-            $.each(data.contact, function(key, val){
-                $('#results').append('<li><b>'+key+':</b> '+val+'</li>');
             });
           }
         },
